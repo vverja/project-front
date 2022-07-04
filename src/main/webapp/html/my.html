@@ -1,11 +1,256 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
     <title>RPG</title>
     <script src=https://code.jquery.com/jquery-3.6.0.min.js></script>
+    <script src=https://cdnjs.cloudflare.com/ajax/libs/jquery-validate/1.19.1/jquery.validate.min.js></script>
     <link href="/css/my.css" rel="stylesheet">
 </head>
 <body>
 <h1>RPG admin panel</h1>
+<h2>Accounts list:</h2>
+<p>
+    <label for="countOfRows">Count of rows: </label>
+        <select id="countOfRows">
+            <option selected>3</option>
+            <option>5</option>
+            <option>10</option>
+            <option>20</option>
+        </select>
 
+<table id="main_table">
+    <thead>
+    <tr><th>#</th>
+        <th>Name</th>
+        <th>Title</th>
+        <th>Race</th>
+        <th>Profession</th>
+        <th>Level</th>
+        <th>Birthday</th>
+        <th>Banned</th>
+        <th>Edit</th>
+        <th>Delete</th>
+    </tr>
+    </thead>
+    <tbody>
+    </tbody>
+</table>
+</p>
+<div id="paging">
+</div>
+<hr>
+<div class="create-button" onclick="showPopupForm()">Create new player</div>
+<div class="form-popup">
+    <div class="form-container">
+        <form id="addNewPlayerForm" method="post">
+            <input type="text" name="name" placeholder="NAME"/><br>
+            <input type="text" name="title" placeholder="TITLE"/><br>
+            <select id="selectRace" name="race"></select></br>
+            <select id="selectProfession" name="profession"></select></br>
+            <input type="text" name="level" placeholder="LEVEL"/><br>
+            <label>Birthday: <input type="date" name="birthday" data-date-format="dd/mm/yyyy"/></label><br>
+            <label>Banned: <input type="checkbox" name="banned"/><br></label>
+            <input class="btn" type = "submit"/>
+        </form>
+    </div>
+</div>
+<script>
+
+    function getList(selector, value, listType){
+        let rows = $('#countOfRows option:selected').text();
+        let pages = $("#paging").find("button").length;
+
+        $.get('/rest/players',{pagenumber:0, pageSize: pages*rows}, function (data, status, shr){
+            $.each(data, function (i, row){
+                let rowElement = row[listType];
+                if (!selector.find('option[value="' + rowElement + '"]').length) {
+                    selector.append('<option value="' + rowElement + '">' + rowElement + '</option>');
+                    if (rowElement === value) {
+                        selector.val(value);
+
+                    }
+                }
+            });
+        });
+
+    }
+    function showRows(pageNumber){
+        let pageSize = $('#countOfRows option:selected').text();
+        $('#main_table td').parent().remove();
+        $.get('/rest/players',{"pageNumber":(pageNumber-1), "pageSize":pageSize},
+            function (data, status, xhr) {
+                $.each(data, function (i, row){
+                    let birthdate = new Date(row['birthday']);
+                    let id = row['id'];
+                    $('#main_table tr:last').after('<tr id=row'+id+'><td id="id">'+ id +
+                        '</td><td id="name" class="editable">' + row['name']+
+                        '</td><td id="title" class="editable">' + row['title']+
+                        '</td><td id="race" class="editable">' + row['race']+
+                        '</td><td id="profession" class="editable">' + row['profession']+
+                        '</td><td id="level">' + row['level'] +
+                        '</td><td id="birthday">' + birthdate.getDay() + '/' + birthdate.getMonth() + '/' + birthdate.getFullYear() +
+                        '</td><td id="banned" class="editable">' + row['banned'] + '</td>' +
+                        '<td class="img_edit'+ id +'"><img src="/img/edit.png" onclick="editRow('+id+')"></td>' +
+                        '<td><img src="/img/delete.png" onclick="deleteById('+row['id']+','+ pageNumber +')"></td>' +
+                        '</tr>');
+                });
+            });
+         $('.button_clicked').removeClass();
+         $('#btn'+pageNumber).addClass('button_clicked').show();
+    }
+    function showPagingButtons(){
+        $.get('/rest/players/count',
+            function (count, status, xhr) {
+                let rows = $('#countOfRows option:selected').text();
+                if (rows===0)
+                    return;
+                $('#paging > button').remove()
+                let pages = Math.ceil(count/rows);
+                for (let i = 1; i <= pages; i++) {
+                    $('#paging').append('<button id=btn'+i+' onclick=showRows('+i+')>' + i +'</button>');
+                }
+            });
+    }
+
+    function editRow(id){
+        $('.img_edit'+ id +' img').attr("src", "/img/save.png").attr("onclick","saveRow(" + id + ")");
+        $('#row'+id +' .editable').each(function (index){
+            let value = $(this).text();
+            if ($(this).attr('id')==='race'||$(this).attr('id')==='profession'){
+                $(this).empty().append("<select name="+ $(this).attr('id')+"></select>");
+                getList($(this).find("select"), value, $(this).attr('id'));
+            }else if($(this).attr('id')==='banned'){
+                value = value==="true"?"checked":"";
+                $(this).empty().append("<input name="+ $(this).attr('id')+" type='checkbox' "+ value + "/>");
+            }else{
+                $(this).empty().append("<input name="+ $(this).attr('id') +" type='text' value='"+value+"' size='"+value.toString().length+"'>");
+            }
+        });
+    }
+
+    function saveRow(id){
+        let player = {};
+        $('#row'+id +' .editable').each(function (index){
+            player[$(this).attr('id')]= $(this).children().val();
+            if($(this).attr('id')==='banned'){
+                if ($(this).children().is(":checked")){
+                    player['banned'] = "true";
+                }else{
+                    player['banned'] = "false";
+                }
+            }
+        });
+        $.ajax({
+            type: "POST",
+            url: '/rest/players/'+id,
+            data: JSON.stringify(player),
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            success: function (data){
+                let pageNumber = $('.button_clicked').text()
+                if (pageNumber==='') pageNumber='1';
+                showRows(pageNumber);
+            }
+        });
+    }
+    function deleteById(id, pageNumber){
+        $.ajax({url:'/rest/players/' + id, type:'DELETE', success: function (data){
+            showRows(pageNumber);
+        }});
+    }
+
+    function showPopupForm(){
+        getList($('#selectRace'),"", "race");
+        getList($('#selectProfession'),"", "profession");
+
+        let display = $('.form-popup').css('display');
+        if (display==='block') {
+            $('.form-popup').css('display', 'none');
+        }
+        else {
+            $('.form-popup').css('display', 'block');
+        }
+
+    }
+
+    $(document).ready(function (){
+        showPagingButtons();
+        showRows(1);
+        $('#countOfRows').on('change', function (){
+            showPagingButtons();
+            showRows(1);
+        });
+        $("#addNewPlayerForm").validate(
+            {
+                rules: {
+                    name: {
+                        required: true,
+                        maxlength: 12
+                    },
+                    title: {
+                        required: true,
+                        maxlength: 30
+                    },
+                    level:{
+                        required: true,
+                        number: true,
+                        min:1,
+                        max:100
+                    },
+                    birthday: {
+                        required: true,
+                        max: "3000.01.01",
+                        min: "2000.01.01",
+                        date: true
+                    }
+                },
+                messages:{
+                    name: {
+                        required: "name is empty",
+                        maxlength: "max 12 symbols"
+                    },
+                    title:{
+                        required: "title is empty",
+                        maxlength: "max 30 symbols"
+                    },
+                    level:{
+                        required: "level is empty",
+                        max: "number from 1 to 100",
+                        min: "number от 1 to 100",
+                        number: "Must be number"
+                    },
+                    birthday: {
+                        required: "birthday is empty",
+                        max: "max 01.01.3000 г.",
+                        min: "min 01.01.2000 г.",
+                        number: "Must be number"
+                    }
+                },
+                submitHandler: function (form){
+                    let data ={};
+                    $('#addNewPlayerForm').serializeArray().map((o)=>data[o.name]=o.value);
+                    data['birthday'] = Date.parse(data['birthday']);
+                    data['banned'] = data['banned']==='on'?'true':'false';
+                    $.ajax({
+                        type: "POST",
+                        url: '/rest/players',
+                        data: JSON.stringify(data),
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        success: function (data) {
+                            showPagingButtons();
+                            let pageNumber = $('#paging button').last().text()
+                            showRows(pageNumber);
+                        }
+                    });
+                }
+        });
+    });
+
+</script>
 </body>
 </html>
